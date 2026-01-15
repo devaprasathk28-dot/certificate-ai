@@ -17,14 +17,23 @@ interface UploadResult {
  */
 export async function uploadMedia(file: File): Promise<UploadResult> {
   try {
-    // Create FormData for file upload
-    const formData = new FormData();
-    formData.append('media', file);
-
-    // Upload to Wix Media Manager API
-    const response = await fetch('/_api/upload/file', {
+    // Convert file to base64 for Wix upload
+    const base64 = await fileToBase64(file);
+    
+    // Upload to Wix Media Manager using the correct endpoint
+    const response = await fetch('https://www.wixapis.com/media-manager/v1/files/upload', {
       method: 'POST',
-      body: formData,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': getWixAuthToken(),
+      },
+      body: JSON.stringify({
+        file: {
+          content: base64.split(',')[1], // Remove data:mime;base64, prefix
+          name: file.name,
+        },
+        mimeType: file.type,
+      }),
     });
 
     if (!response.ok) {
@@ -37,7 +46,7 @@ export async function uploadMedia(file: File): Promise<UploadResult> {
 
     // Return standardized result
     return {
-      url: data.file?.url || data.url,
+      url: data.file?.url || data.url || data.fileUrl,
       fileName: file.name,
       fileSize: file.size,
       mimeType: file.type,
@@ -46,6 +55,27 @@ export async function uploadMedia(file: File): Promise<UploadResult> {
     console.error('Media upload error:', error);
     throw new Error('Failed to upload file. Please try again.');
   }
+}
+
+/**
+ * Convert File to base64 string
+ */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Get Wix authentication token from the current session
+ */
+function getWixAuthToken(): string {
+  // In Wix environment, the auth token is available in the window object
+  // This is automatically injected by Wix
+  return (window as any).__WIXCODE_INSTANCE__ || '';
 }
 
 /**
