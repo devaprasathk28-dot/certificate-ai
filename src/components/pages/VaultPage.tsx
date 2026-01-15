@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { BaseCrudService } from '@/integrations';
 import { useMember } from '@/integrations';
 import Header from '@/components/Header';
@@ -21,10 +21,13 @@ import {
   Trash2,
   Eye,
   Plus,
+  FileUp,
+  ImagePlus,
 } from 'lucide-react';
 import { Certificates } from '@/entities';
 import { format } from 'date-fns';
 import { Toaster } from '@/components/ui/toaster';
+import { uploadMedia } from '@/integrations/media';
 
 export default function VaultPage() {
   const { member } = useMember();
@@ -35,6 +38,10 @@ export default function VaultPage() {
   const [selectedCert, setSelectedCert] = useState<Certificates | null>(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
+  
+  // File upload refs
+  const pdfFileInputRef = useRef<HTMLInputElement>(null);
+  const imageFileInputRef = useRef<HTMLInputElement>(null);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -69,6 +76,102 @@ export default function VaultPage() {
       console.error('Error loading certificates:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handlePdfFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (file.type !== 'application/pdf') {
+      toast({
+        title: 'Invalid File Type',
+        description: 'Please upload a PDF file.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      toast({
+        title: 'File Too Large',
+        description: 'PDF file must be less than 10MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: 'Uploading PDF',
+        description: 'Please wait while we upload your certificate file...',
+      });
+
+      const result = await uploadMedia(file);
+      
+      setFormData({ ...formData, certificateFileUrl: result.url });
+      
+      toast({
+        title: 'PDF Uploaded',
+        description: 'Certificate file uploaded successfully.',
+      });
+    } catch (error) {
+      console.error('Error uploading PDF:', error);
+      toast({
+        title: 'Upload Failed',
+        description: 'Failed to upload PDF file. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: 'Invalid File Type',
+        description: 'Please upload an image file (JPEG, PNG, etc.).',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: 'File Too Large',
+        description: 'Image file must be less than 5MB.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      toast({
+        title: 'Uploading Image',
+        description: 'Please wait while we upload your preview image...',
+      });
+
+      const result = await uploadMedia(file);
+      
+      setFormData({ ...formData, certificatePreviewImage: result.url });
+      
+      toast({
+        title: 'Image Uploaded',
+        description: 'Preview image uploaded successfully.',
+      });
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast({
+        title: 'Upload Failed',
+        description: 'Failed to upload image file. Please try again.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -249,28 +352,74 @@ export default function VaultPage() {
 
                 <div className="space-y-2">
                   <Label htmlFor="certificateFileUrl" className="font-paragraph text-sm font-semibold">
-                    Certificate File URL (Optional)
+                    Certificate File (PDF)
                   </Label>
-                  <Input
-                    id="certificateFileUrl"
-                    value={formData.certificateFileUrl}
-                    onChange={(e) => setFormData({ ...formData, certificateFileUrl: e.target.value })}
-                    placeholder="https://example.com/certificate.pdf"
-                    className="font-paragraph"
-                  />
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Input
+                        id="certificateFileUrl"
+                        value={formData.certificateFileUrl}
+                        onChange={(e) => setFormData({ ...formData, certificateFileUrl: e.target.value })}
+                        placeholder="https://example.com/certificate.pdf or upload file"
+                        className="font-paragraph flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => pdfFileInputRef.current?.click()}
+                        className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                      >
+                        <FileUp className="w-4 h-4 mr-2" />
+                        Upload PDF
+                      </Button>
+                    </div>
+                    <input
+                      ref={pdfFileInputRef}
+                      type="file"
+                      accept="application/pdf"
+                      onChange={handlePdfFileUpload}
+                      className="hidden"
+                    />
+                    <p className="font-paragraph text-xs text-secondary/60">
+                      Upload a PDF file (max 10MB) or enter a URL
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="certificatePreviewImage" className="font-paragraph text-sm font-semibold">
-                    Preview Image URL (Optional)
+                    Preview Image (JPEG/PNG)
                   </Label>
-                  <Input
-                    id="certificatePreviewImage"
-                    value={formData.certificatePreviewImage}
-                    onChange={(e) => setFormData({ ...formData, certificatePreviewImage: e.target.value })}
-                    placeholder="https://example.com/preview.jpg"
-                    className="font-paragraph"
-                  />
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Input
+                        id="certificatePreviewImage"
+                        value={formData.certificatePreviewImage}
+                        onChange={(e) => setFormData({ ...formData, certificatePreviewImage: e.target.value })}
+                        placeholder="https://example.com/preview.jpg or upload file"
+                        className="font-paragraph flex-1"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => imageFileInputRef.current?.click()}
+                        className="border-primary text-primary hover:bg-primary hover:text-primary-foreground"
+                      >
+                        <ImagePlus className="w-4 h-4 mr-2" />
+                        Upload Image
+                      </Button>
+                    </div>
+                    <input
+                      ref={imageFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageFileUpload}
+                      className="hidden"
+                    />
+                    <p className="font-paragraph text-xs text-secondary/60">
+                      Upload an image file (max 5MB) or enter a URL
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex gap-4 pt-4">
