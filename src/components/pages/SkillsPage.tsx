@@ -1,20 +1,40 @@
 import { useState, useEffect } from 'react';
 import { BaseCrudService } from '@/integrations';
+import { useMember } from '@/integrations';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Brain, Search, Star, Wrench } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { useToast } from '@/hooks/use-toast';
+import { Brain, Search, Star, Wrench, Plus, Trash2 } from 'lucide-react';
 import { Skills } from '@/entities';
+import { Toaster } from '@/components/ui/toaster';
 
 export default function SkillsPage() {
+  const { toast } = useToast();
   const [skills, setSkills] = useState<Skills[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [proficiencyFilter, setProficiencyFilter] = useState('all');
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    skillName: '',
+    description: '',
+    category: '',
+    proficiencyLevel: 'Intermediate',
+    relatedTools: '',
+    isCoreSkill: false,
+  });
 
   useEffect(() => {
     loadSkills();
@@ -28,6 +48,83 @@ export default function SkillsPage() {
       console.error('Error loading skills:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleAddSkill = async () => {
+    if (!formData.skillName || !formData.category) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please fill in skill name and category.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setAdding(true);
+    try {
+      const newSkill: Skills = {
+        _id: crypto.randomUUID(),
+        skillName: formData.skillName,
+        description: formData.description,
+        category: formData.category,
+        proficiencyLevel: formData.proficiencyLevel,
+        relatedTools: formData.relatedTools,
+        isCoreSkill: formData.isCoreSkill,
+      };
+
+      await BaseCrudService.create('skills', newSkill);
+      
+      // Optimistic update
+      setSkills([newSkill, ...skills]);
+      
+      toast({
+        title: 'Skill Added',
+        description: 'Your skill has been successfully added to your profile.',
+      });
+      
+      setAddDialogOpen(false);
+      setFormData({
+        skillName: '',
+        description: '',
+        category: '',
+        proficiencyLevel: 'Intermediate',
+        relatedTools: '',
+        isCoreSkill: false,
+      });
+    } catch (error) {
+      console.error('Error adding skill:', error);
+      toast({
+        title: 'Add Failed',
+        description: 'Failed to add skill. Please try again.',
+        variant: 'destructive',
+      });
+      loadSkills(); // Reload on failure
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleDeleteSkill = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this skill?')) return;
+    
+    // Optimistic update
+    setSkills(skills.filter((s) => s._id !== id));
+    
+    try {
+      await BaseCrudService.delete('skills', id);
+      toast({
+        title: 'Skill Deleted',
+        description: 'The skill has been removed from your profile.',
+      });
+    } catch (error) {
+      console.error('Error deleting skill:', error);
+      toast({
+        title: 'Delete Failed',
+        description: 'Failed to delete skill. Please try again.',
+        variant: 'destructive',
+      });
+      loadSkills(); // Reload on failure
     }
   };
 
@@ -88,7 +185,7 @@ export default function SkillsPage() {
         </div>
 
         {/* Filters */}
-        <div className="grid md:grid-cols-3 gap-4 mb-8">
+        <div className="grid md:grid-cols-4 gap-4 mb-8">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-secondary/40" />
             <Input
@@ -127,6 +224,134 @@ export default function SkillsPage() {
               ))}
             </SelectContent>
           </Select>
+
+          <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-12">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Skill
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-2xl">Add New Skill</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="skillName" className="font-paragraph text-sm font-semibold">
+                    Skill Name *
+                  </Label>
+                  <Input
+                    id="skillName"
+                    value={formData.skillName}
+                    onChange={(e) => setFormData({ ...formData, skillName: e.target.value })}
+                    placeholder="e.g., Python Programming, Project Management"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="category" className="font-paragraph text-sm font-semibold">
+                    Category *
+                  </Label>
+                  <Input
+                    id="category"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    placeholder="e.g., Programming, Design, Management"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="proficiencyLevel" className="font-paragraph text-sm font-semibold">
+                    Proficiency Level
+                  </Label>
+                  <Select
+                    value={formData.proficiencyLevel}
+                    onValueChange={(value) => setFormData({ ...formData, proficiencyLevel: value })}
+                  >
+                    <SelectTrigger className="font-paragraph">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Beginner">Beginner</SelectItem>
+                      <SelectItem value="Intermediate">Intermediate</SelectItem>
+                      <SelectItem value="Advanced">Advanced</SelectItem>
+                      <SelectItem value="Expert">Expert</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description" className="font-paragraph text-sm font-semibold">
+                    Description
+                  </Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Describe your experience with this skill..."
+                    className="font-paragraph min-h-[100px]"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="relatedTools" className="font-paragraph text-sm font-semibold">
+                    Related Tools/Technologies
+                  </Label>
+                  <Input
+                    id="relatedTools"
+                    value={formData.relatedTools}
+                    onChange={(e) => setFormData({ ...formData, relatedTools: e.target.value })}
+                    placeholder="e.g., VS Code, Git, Docker"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isCoreSkill"
+                    checked={formData.isCoreSkill}
+                    onChange={(e) => setFormData({ ...formData, isCoreSkill: e.target.checked })}
+                    className="w-4 h-4 text-primary border-secondary/20 rounded focus:ring-primary"
+                  />
+                  <Label htmlFor="isCoreSkill" className="font-paragraph text-sm cursor-pointer">
+                    Mark as Core Skill
+                  </Label>
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <Button
+                    onClick={handleAddSkill}
+                    disabled={adding}
+                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {adding ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Adding...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Skill
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setAddDialogOpen(false)}
+                    disabled={adding}
+                    className="border-secondary text-secondary hover:bg-secondary hover:text-secondary-foreground"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Stats */}
@@ -184,7 +409,7 @@ export default function SkillsPage() {
         {filteredSkills.length > 0 ? (
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {filteredSkills.map((skill) => (
-              <Card key={skill._id} className="hover:border-primary/30 transition-colors">
+              <Card key={skill._id} className="hover:border-primary/30 transition-colors relative">
                 <CardHeader>
                   <div className="flex items-start justify-between mb-2">
                     <CardTitle className="font-heading text-lg flex items-center gap-2">
@@ -193,6 +418,14 @@ export default function SkillsPage() {
                         <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
                       )}
                     </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleDeleteSkill(skill._id)}
+                      className="text-red-500 hover:text-red-600 hover:bg-red-50 -mt-2 -mr-2"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {skill.proficiencyLevel && (
@@ -234,17 +467,27 @@ export default function SkillsPage() {
                   ? 'No skills found'
                   : 'No skills extracted yet'}
               </h3>
-              <p className="font-paragraph text-base text-secondary/70">
+              <p className="font-paragraph text-base text-secondary/70 mb-6">
                 {searchQuery || categoryFilter !== 'all' || proficiencyFilter !== 'all'
                   ? 'Try adjusting your filters'
-                  : 'Upload certificates to extract your skills automatically'}
+                  : 'Add skills manually or upload certificates to extract them automatically'}
               </p>
+              {!searchQuery && categoryFilter === 'all' && proficiencyFilter === 'all' && (
+                <Button 
+                  onClick={() => setAddDialogOpen(true)}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Your First Skill
+                </Button>
+              )}
             </CardContent>
           </Card>
         )}
       </main>
 
       <Footer />
+      <Toaster />
     </div>
   );
 }

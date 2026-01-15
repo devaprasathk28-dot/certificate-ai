@@ -21,7 +21,7 @@ export interface CareerRecommendations {
   averageSalaryRange?: string;
   /** @wixFieldType text */
   jobMarketOutlook?: string;
-  /** @wixFieldType image */
+  /** @wixFieldType image - Contains image URL, render with <Image> component, NOT as text */
   careerImage?: string;
 }
 
@@ -36,7 +36,7 @@ export interface Certificates {
   _updatedDate?: Date;
   /** @wixFieldType url */
   certificateFileUrl?: string;
-  /** @wixFieldType image */
+  /** @wixFieldType image - Contains image URL, render with <Image> component, NOT as text */
   certificatePreviewImage?: string;
   /** @wixFieldType text */
   issuingBody?: string;

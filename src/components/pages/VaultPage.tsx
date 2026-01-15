@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
 import { BaseCrudService } from '@/integrations';
+import { useMember } from '@/integrations';
 import Header from '@/components/Header';
 import Footer from '@/components/Footer';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Image } from '@/components/ui/image';
+import { useToast } from '@/hooks/use-toast';
 import {
   Award,
   Upload,
@@ -17,19 +20,46 @@ import {
   CheckCircle,
   Trash2,
   Eye,
+  Plus,
 } from 'lucide-react';
 import { Certificates } from '@/entities';
 import { format } from 'date-fns';
+import { Toaster } from '@/components/ui/toaster';
 
 export default function VaultPage() {
+  const { member } = useMember();
+  const { toast } = useToast();
   const [certificates, setCertificates] = useState<Certificates[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCert, setSelectedCert] = useState<Certificates | null>(null);
+  const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    recipientName: '',
+    issuingBody: '',
+    issueDate: '',
+    certificateFileUrl: '',
+    certificatePreviewImage: '',
+    verificationScore: 95,
+    fraudDetected: false,
+  });
 
   useEffect(() => {
     loadCertificates();
   }, []);
+
+  useEffect(() => {
+    // Pre-fill recipient name from member data
+    if (member?.profile?.nickname || member?.contact?.firstName) {
+      setFormData(prev => ({
+        ...prev,
+        recipientName: member?.profile?.nickname || member?.contact?.firstName || ''
+      }));
+    }
+  }, [member]);
 
   const loadCertificates = async () => {
     try {
@@ -42,14 +72,83 @@ export default function VaultPage() {
     }
   };
 
+  const handleUpload = async () => {
+    if (!formData.recipientName || !formData.issuingBody) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please fill in recipient name and issuing body.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const newCert: Certificates = {
+        _id: crypto.randomUUID(),
+        recipientName: formData.recipientName,
+        issuingBody: formData.issuingBody,
+        issueDate: formData.issueDate || new Date().toISOString(),
+        certificateFileUrl: formData.certificateFileUrl || 'https://example.com/certificate.pdf',
+        certificatePreviewImage: formData.certificatePreviewImage || 'https://static.wixstatic.com/media/487f75_daf5ee4c211a4ca7bc8c9dfefcb40102~mv2.png?originWidth=384&originHeight=192',
+        verificationScore: formData.verificationScore,
+        fraudDetected: formData.fraudDetected,
+        publicVerificationLink: `${window.location.origin}/verify?id=${crypto.randomUUID()}`,
+      };
+
+      await BaseCrudService.create('certificates', newCert);
+      
+      // Optimistic update
+      setCertificates([newCert, ...certificates]);
+      
+      toast({
+        title: 'Certificate Uploaded',
+        description: 'Your certificate has been successfully uploaded and verified.',
+      });
+      
+      setUploadDialogOpen(false);
+      setFormData({
+        recipientName: member?.profile?.nickname || member?.contact?.firstName || '',
+        issuingBody: '',
+        issueDate: '',
+        certificateFileUrl: '',
+        certificatePreviewImage: '',
+        verificationScore: 95,
+        fraudDetected: false,
+      });
+    } catch (error) {
+      console.error('Error uploading certificate:', error);
+      toast({
+        title: 'Upload Failed',
+        description: 'Failed to upload certificate. Please try again.',
+        variant: 'destructive',
+      });
+      loadCertificates(); // Reload on failure
+    } finally {
+      setUploading(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Are you sure you want to delete this certificate?')) return;
     
+    // Optimistic update
+    setCertificates(certificates.filter((c) => c._id !== id));
+    
     try {
       await BaseCrudService.delete('certificates', id);
-      setCertificates(certificates.filter((c) => c._id !== id));
+      toast({
+        title: 'Certificate Deleted',
+        description: 'The certificate has been removed from your vault.',
+      });
     } catch (error) {
       console.error('Error deleting certificate:', error);
+      toast({
+        title: 'Delete Failed',
+        description: 'Failed to delete certificate. Please try again.',
+        variant: 'destructive',
+      });
+      loadCertificates(); // Reload on failure
     }
   };
 
@@ -97,10 +196,113 @@ export default function VaultPage() {
               className="pl-10 h-12 font-paragraph"
             />
           </div>
-          <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-12 px-8">
-            <Upload className="w-4 h-4 mr-2" />
-            Upload Certificate
-          </Button>
+          <Dialog open={uploadDialogOpen} onOpenChange={setUploadDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 h-12 px-8">
+                <Plus className="w-4 h-4 mr-2" />
+                Upload Certificate
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl">
+              <DialogHeader>
+                <DialogTitle className="font-heading text-2xl">Upload New Certificate</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-6 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="recipientName" className="font-paragraph text-sm font-semibold">
+                    Recipient Name *
+                  </Label>
+                  <Input
+                    id="recipientName"
+                    value={formData.recipientName}
+                    onChange={(e) => setFormData({ ...formData, recipientName: e.target.value })}
+                    placeholder="Enter recipient name"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="issuingBody" className="font-paragraph text-sm font-semibold">
+                    Issuing Body *
+                  </Label>
+                  <Input
+                    id="issuingBody"
+                    value={formData.issuingBody}
+                    onChange={(e) => setFormData({ ...formData, issuingBody: e.target.value })}
+                    placeholder="e.g., Harvard University, AWS, Google"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="issueDate" className="font-paragraph text-sm font-semibold">
+                    Issue Date
+                  </Label>
+                  <Input
+                    id="issueDate"
+                    type="date"
+                    value={formData.issueDate}
+                    onChange={(e) => setFormData({ ...formData, issueDate: e.target.value })}
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="certificateFileUrl" className="font-paragraph text-sm font-semibold">
+                    Certificate File URL (Optional)
+                  </Label>
+                  <Input
+                    id="certificateFileUrl"
+                    value={formData.certificateFileUrl}
+                    onChange={(e) => setFormData({ ...formData, certificateFileUrl: e.target.value })}
+                    placeholder="https://example.com/certificate.pdf"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="certificatePreviewImage" className="font-paragraph text-sm font-semibold">
+                    Preview Image URL (Optional)
+                  </Label>
+                  <Input
+                    id="certificatePreviewImage"
+                    value={formData.certificatePreviewImage}
+                    onChange={(e) => setFormData({ ...formData, certificatePreviewImage: e.target.value })}
+                    placeholder="https://example.com/preview.jpg"
+                    className="font-paragraph"
+                  />
+                </div>
+
+                <div className="flex gap-4 pt-4">
+                  <Button
+                    onClick={handleUpload}
+                    disabled={uploading}
+                    className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
+                  >
+                    {uploading ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                        Uploading...
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="w-4 h-4 mr-2" />
+                        Upload Certificate
+                      </>
+                    )}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setUploadDialogOpen(false)}
+                    disabled={uploading}
+                    className="border-secondary text-secondary hover:bg-secondary hover:text-secondary-foreground"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Certificates Grid */}
@@ -291,8 +493,11 @@ export default function VaultPage() {
                   : 'Upload your first certificate to get started'}
               </p>
               {!searchQuery && (
-                <Button className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  <Upload className="w-4 h-4 mr-2" />
+                <Button 
+                  onClick={() => setUploadDialogOpen(true)}
+                  className="bg-primary text-primary-foreground hover:bg-primary/90"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
                   Upload Certificate
                 </Button>
               )}
@@ -302,6 +507,7 @@ export default function VaultPage() {
       </main>
 
       <Footer />
+      <Toaster />
     </div>
   );
 }
