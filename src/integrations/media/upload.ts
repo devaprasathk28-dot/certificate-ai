@@ -22,12 +22,14 @@ export async function uploadMedia(file: File): Promise<UploadResult> {
     formData.append('media', file);
 
     // Upload to Wix Media Manager API
-    const response = await fetch('/_api/media-manager/v1/files/upload', {
+    const response = await fetch('/_api/upload/file', {
       method: 'POST',
       body: formData,
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Upload failed:', response.status, errorText);
       throw new Error(`Upload failed: ${response.statusText}`);
     }
 
